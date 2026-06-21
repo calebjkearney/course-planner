@@ -1,0 +1,1323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Course Sequence Builder</title>
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Course Planner">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<style>
+  html, body { margin: 0; padding: 0; background: #FAF8F4; }
+  #root { min-height: 100vh; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useMemo } = React;
+
+const Icon = ({ d, size = 14, ...props }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
+    {d}
+  </svg>
+);
+const PlusIcon = (p) => <Icon {...p} d={<><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>} />;
+const TrashIcon = (p) => <Icon {...p} d={<><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></>} />;
+const WarnIcon = (p) => <Icon {...p} d={<><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>} />;
+const CalIcon = (p) => <Icon {...p} d={<><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>} />;
+const BookIcon = (p) => <Icon {...p} d={<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20M4 19.5A2.5 2.5 0 0 0 6.5 22H20V2H6.5A2.5 2.5 0 0 0 4 4.5v15z"/>} />;
+const GearIcon = (p) => <Icon {...p} d={<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>} />;
+const ChevronLeftIcon = (p) => <Icon {...p} d={<polyline points="15 18 9 12 15 6"/>} />;
+const ChevronRightIcon = (p) => <Icon {...p} d={<polyline points="9 18 15 12 9 6"/>} />;
+const LayersIcon = (p) => <Icon {...p} d={<><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></>} />;
+
+const uid = () => Math.random().toString(36).slice(2, 9);
+
+const emptyCourse = () => ({
+  id: uid(),
+  code: "",
+  name: "",
+  credits: 3,
+  prereqs: [],
+  coreqs: [],
+  concurs: [],
+  want: true,
+  offered: "both",
+  lock: { mode: "none", type: "fall", year: 1 },
+});
+
+function buildTermSequence(includeSummer, cap) {
+  const seq = [];
+  let year = 1;
+  while (seq.length < cap) {
+    seq.push({ type: "fall", year });
+    seq.push({ type: "spring", year });
+    if (includeSummer) seq.push({ type: "summer", year });
+    year++;
+  }
+  return seq;
+}
+
+const termDisplay = { fall: "Fall", spring: "Spring", summer: "Summer" };
+const semesterLabel = (term) => `${termDisplay[term.type]} — Year ${term.year}`;
+const termKey = (t) => `${t.type}-${t.year}`;
+
+function buildBundles(ids, byId, readySet) {
+  const parent = {};
+  ids.forEach((id) => (parent[id] = id));
+  const find = (x) => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  const union = (a, b) => {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) parent[ra] = rb;
+  };
+  ids.forEach((id) => {
+    const c = byId[id];
+    (c.coreqs || []).forEach((p) => {
+      // Always bundle declared co-requisites that are both still unscheduled — a coreq is
+      // strictly "same term," so it should wait for its partner rather than only bundling
+      // when the partner happens to already be ready.
+      if (ids.includes(p)) union(id, p);
+    });
+    (c.concurs || []).forEach((p) => {
+      // A requisite ("before or same term") partner only needs to be FORCED into this same
+      // term if it could actually go this term too (its own prereqs are already clear).
+      // If the partner isn't ready yet, this course just isn't eligible this term either —
+      // but we must NOT drag the partner down to wait for an unrelated course's prereqs.
+      if (ids.includes(p) && readySet.has(id) && readySet.has(p)) union(id, p);
+    });
+  });
+  const groups = {};
+  ids.forEach((id) => {
+    const r = find(id);
+    (groups[r] = groups[r] || []).push(id);
+  });
+  return { find, groups };
+}
+
+function topoScheduleCore(courses, maxCreditsPerSem, maxSemesters, includeSummer, maxCreditsSummer, minCreditsPerSem, balanceDenominator, noBalance, tieBreak) {
+  const byId = Object.fromEntries(courses.map((c) => [c.id, c]));
+  const wanted = courses.filter((c) => c.want);
+  const completed = new Set(courses.filter((c) => !c.want).map((c) => c.id));
+
+  const termSeq = buildTermSequence(includeSummer, 60);
+  const warnings = [];
+
+  let finalTermKey = null;
+  if (maxSemesters) {
+    let count = 0;
+    for (const t of termSeq) {
+      if (t.type !== "summer") {
+        count++;
+        if (count === Number(maxSemesters)) {
+          finalTermKey = termKey(t);
+          break;
+        }
+      }
+    }
+  }
+
+  const lockedTermOf = {};
+  const lockedByTerm = {};
+  wanted.forEach((c) => {
+    if (!c.lock || c.lock.mode === "none") return;
+    let tKey = null;
+    if (c.lock.mode === "specific") {
+      tKey = `${c.lock.type}-${Number(c.lock.year)}`;
+      const exists = termSeq.some((t) => termKey(t) === tKey);
+      if (!exists) {
+        warnings.push(`"${c.code || c.name}" is locked outside the planning window — check your constraints.`);
+        return;
+      }
+    } else if (c.lock.mode === "final") {
+      if (!finalTermKey) {
+        warnings.push(`"${c.code || c.name}" is locked to your final semester, but set "Max semesters available" first.`);
+        return;
+      }
+      tKey = finalTermKey;
+    }
+    if (tKey) {
+      lockedTermOf[c.id] = tKey;
+      (lockedByTerm[tKey] = lockedByTerm[tKey] || []).push(c.id);
+    }
+  });
+
+  let remaining = new Set(wanted.filter((c) => !lockedTermOf[c.id]).map((c) => c.id));
+  const lockedRemaining = new Set(Object.keys(lockedTermOf));
+
+  const semesters = [];
+  let termIndex = 0;
+  let fallSpringCount = 0;
+
+  while ((remaining.size > 0 || lockedRemaining.size > 0) && termIndex < termSeq.length) {
+    const term = termSeq[termIndex];
+    termIndex++;
+    const tKey = termKey(term);
+
+    if (term.type !== "summer") {
+      if (maxSemesters && fallSpringCount >= maxSemesters) {
+        if (remaining.size > 0) {
+          warnings.push(`Ran out of semesters (limit ${maxSemesters}) with ${remaining.size} course(s) still unscheduled.`);
+        }
+        break;
+      }
+      fallSpringCount++;
+    }
+
+    const termCap = term.type === "summer" ? maxCreditsSummer : maxCreditsPerSem;
+    const sem = [];
+    let creditTotal = 0;
+    const placedThisTerm = new Set();
+
+    const lockedHere = [...(lockedByTerm[tKey] || [])];
+    for (let i = 0; i < lockedHere.length; i++) {
+      const id = lockedHere[i];
+      if (placedThisTerm.has(id)) continue;
+      const c = byId[id];
+      const prereqsOk = c.prereqs.every((p) => completed.has(p) || !byId[p]);
+      if (!prereqsOk) {
+        warnings.push(`"${c.code || c.name}" is locked to ${semesterLabel(term)}, but its prerequisites won't be done by then.`);
+      }
+      sem.push(c);
+      creditTotal += c.credits;
+      placedThisTerm.add(id);
+      lockedRemaining.delete(id);
+      remaining.delete(id);
+      (c.coreqs || []).forEach((p) => {
+        if (byId[p] && remaining.has(p) && !placedThisTerm.has(p)) {
+          lockedHere.push(p);
+        }
+      });
+    }
+    lockedHere.forEach((id) => {
+      if (placedThisTerm.has(id)) return;
+      const c = byId[id];
+      if (!c) return;
+      sem.push(c);
+      creditTotal += c.credits;
+      placedThisTerm.add(id);
+      remaining.delete(id);
+      lockedRemaining.delete(id);
+    });
+    if (lockedHere.length && termCap && creditTotal > termCap) {
+      warnings.push(`${semesterLabel(term)} exceeds your credit limit because of locked/co-requisite course(s).`);
+    }
+
+    const remainingArr = [...remaining];
+
+    // Soft-balance: spread remaining credit load evenly across remaining terms of this type,
+    // instead of always packing each semester right up to the hard cap.
+    let effectiveCap = termCap;
+    if (term.type !== "summer" && !noBalance) {
+      const totalRemainingCredits = remainingArr.reduce((s, id) => s + byId[id].credits, 0) + creditTotal;
+      const semestersLeft = maxSemesters
+        ? Math.max(1, Number(maxSemesters) - fallSpringCount + 1)
+        : Math.max(1, (balanceDenominator || 1) - fallSpringCount + 1);
+      const target = Math.round(totalRemainingCredits / semestersLeft);
+      const floor = Math.max(target, creditTotal, Number(minCreditsPerSem) || 0);
+      effectiveCap = termCap ? Math.min(termCap, floor) : floor;
+    }
+
+    const readySet = new Set(
+      remainingArr.filter((id) => {
+        const c = byId[id];
+        const prereqsOk = c.prereqs.every((p) => completed.has(p) || !byId[p]);
+        const termOk = term.type === "summer" ? c.offered === "both" : (c.offered === "both" || c.offered === term.type);
+        return prereqsOk && termOk;
+      })
+    );
+    const { groups } = buildBundles(remainingArr, byId, readySet);
+
+    const bundleEligible = (rootId) => {
+      const members = groups[rootId];
+      return members.every((id) => {
+        const c = byId[id];
+        const prereqsOk = c.prereqs.every((p) => completed.has(p) || !byId[p]);
+        // A concur/requisite target is only a problem if it's neither completed nor part of
+        // this same bundle (bundling already guarantees same-term placement when needed).
+        const concursOk = (c.concurs || []).every((p) => completed.has(p) || members.includes(p) || !byId[p]);
+        const termOk = term.type === "summer" ? c.offered === "both" : (c.offered === "both" || c.offered === term.type);
+        return prereqsOk && concursOk && termOk;
+      });
+    };
+
+    const eligibleRoots = Object.keys(groups).filter((r) => bundleEligible(r));
+
+    const bundleCredits = (r) => groups[r].reduce((s, id) => s + byId[id].credits, 0);
+
+    // Best-fit toward the credit target: prefer whichever combination fills the semester
+    // evenly. The default tries larger bundles first (classic bin-packing heuristic), but a
+    // single fixed ordering can miss a feasible packing that another ordering would find —
+    // so the caller may request a different tie-break to explore alternatives.
+    if (tieBreak === "size-asc") {
+      eligibleRoots.sort((a, b) => bundleCredits(a) - bundleCredits(b));
+    } else if (tieBreak === "random") {
+      for (let i = eligibleRoots.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [eligibleRoots[i], eligibleRoots[j]] = [eligibleRoots[j], eligibleRoots[i]];
+      }
+    } else {
+      eligibleRoots.sort((a, b) => bundleCredits(b) - bundleCredits(a));
+    }
+
+    const skipped = [];
+    for (const r of eligibleRoots) {
+      const members = groups[r];
+      const cost = bundleCredits(r);
+      if (effectiveCap && creditTotal + cost > effectiveCap) {
+        skipped.push(r);
+        continue;
+      }
+      members.forEach((id) => {
+        sem.push(byId[id]);
+        remaining.delete(id);
+      });
+      creditTotal += cost;
+    }
+
+    // Top up toward the user's minimum-credit floor if we stopped short due to the soft balance cap.
+    if (term.type !== "summer" && minCreditsPerSem && creditTotal < Number(minCreditsPerSem)) {
+      for (const r of skipped) {
+        if (creditTotal >= Number(minCreditsPerSem)) break;
+        const members = groups[r];
+        const cost = bundleCredits(r);
+        if (termCap && creditTotal + cost > termCap) continue; // never break the hard cap
+        members.forEach((id) => {
+          sem.push(byId[id]);
+          remaining.delete(id);
+        });
+        creditTotal += cost;
+      }
+    }
+
+    // Note: "Requisite" eligibility was already checked above (completed earlier OR
+    // eligible to join this same term) — no further enforcement needed here. A requisite
+    // relationship just means "no later than," not "must be exactly simultaneous," so we
+    // don't force courses together or defer them if a partner lands in a different term.
+
+    if (sem.length === placedThisTerm.size && eligibleRoots.length > 0) {
+      const r = eligibleRoots.sort((a, b) => bundleCredits(a) - bundleCredits(b))[0];
+      const members = groups[r];
+      members.forEach((id) => {
+        sem.push(byId[id]);
+        remaining.delete(id);
+      });
+      const cost = bundleCredits(r);
+      creditTotal += cost;
+      // Only actually warn if this exceeds the real hard cap — being forced past the
+      // soft balancing target alone is normal and not worth flagging.
+      if (termCap && creditTotal > termCap) {
+        const names = members.map((id) => byId[id].code || byId[id].name).join(" + ");
+        const msg = members.length > 1
+          ? `Co-requisite pair (${names}) had to go in together and pushes ${semesterLabel(term)} over your ${term.type} credit limit.`
+          : `"${names}" had to be placed in ${semesterLabel(term)} and pushes it over your ${term.type} credit limit.`;
+        warnings.push(msg);
+      }
+    }
+
+    if (term.type !== "summer" && minCreditsPerSem && sem.length > 0 && creditTotal < Number(minCreditsPerSem)) {
+      warnings.push(`${semesterLabel(term)} is under your minimum (${creditTotal} of ${minCreditsPerSem} credits) — not enough courses had their prerequisites cleared yet to fill it further.`);
+    }
+
+    sem.forEach((c) => completed.add(c.id));
+    semesters.push({ term, courses: sem, credits: creditTotal });
+  }
+
+  if ((remaining.size > 0 || lockedRemaining.size > 0) && termIndex >= termSeq.length) {
+    const stuckIds = [...remaining, ...lockedRemaining];
+    if (stuckIds.length) {
+      warnings.push(
+        `Stuck: remaining course(s) couldn't be scheduled — check for a missing prerequisite/co-requisite course or a cycle: ${stuckIds
+          .map((id) => byId[id].code || byId[id].name)
+          .join(", ")}`
+      );
+    }
+  }
+
+  while (semesters.length && semesters[semesters.length - 1].courses.length === 0) {
+    semesters.pop();
+  }
+
+  return { semesters, warnings, unscheduledCount: remaining.size + lockedRemaining.size };
+}
+
+function detectCycle(courses) {
+  const byId = Object.fromEntries(courses.map((c) => [c.id, c]));
+  const wanted = courses.filter((c) => c.want);
+  // Build a directed "must happen no later than" graph: prereqs are strict (must be earlier),
+  // and concurs/coreqs are treated as edges too since they still impose an ordering constraint
+  // (the partner can't come after). A cycle in this graph means two or more courses each
+  // require the other to go first — an unsatisfiable contradiction.
+  const graph = {};
+  wanted.forEach((c) => {
+    graph[c.id] = [
+      ...(c.prereqs || []),
+      ...(c.coreqs || []),
+      ...(c.concurs || []),
+    ].filter((p) => byId[p] && byId[p].want);
+  });
+
+  const WHITE = 0, GRAY = 1, BLACK = 2;
+  const color = {};
+  wanted.forEach((c) => (color[c.id] = WHITE));
+  let cyclePath = null;
+
+  const dfs = (id, path) => {
+    color[id] = GRAY;
+    path.push(id);
+    for (const next of graph[id] || []) {
+      if (color[next] === GRAY) {
+        const startIdx = path.indexOf(next);
+        cyclePath = path.slice(startIdx).concat(next);
+        return true;
+      }
+      if (color[next] === WHITE) {
+        if (dfs(next, path)) return true;
+      }
+    }
+    path.pop();
+    color[id] = BLACK;
+    return false;
+  };
+
+  for (const c of wanted) {
+    if (color[c.id] === WHITE) {
+      if (dfs(c.id, [])) break;
+    }
+  }
+
+  if (cyclePath) {
+    const names = cyclePath.map((id) => byId[id].code || byId[id].name || "Untitled").join(" → ");
+    return `These courses have contradictory requirements that form a cycle, so they can never be validly scheduled: ${names}. Check the relation chips between them (a course can't directly or indirectly require itself).`;
+  }
+  return null;
+}
+
+function scheduleVariance(semesters) {
+  const loads = semesters.filter((s) => s.term.type !== "summer" && s.courses.length > 0).map((s) => s.credits);
+  if (!loads.length) return 0;
+  const mean = loads.reduce((a, b) => a + b, 0) / loads.length;
+  return loads.reduce((s, c) => s + (c - mean) * (c - mean), 0) / loads.length;
+}
+
+function legacyForwardSearch(courses, maxCreditsPerSem, maxSemesters, includeSummer, maxCreditsSummer, minCreditsPerSem) {
+  let denom = null;
+  if (!maxSemesters) {
+    const dry = topoScheduleCore(courses, maxCreditsPerSem, 0, includeSummer, maxCreditsSummer, 0, null, true, "size-desc");
+    denom = dry.semesters.filter((s) => s.term.type !== "summer").length || 1;
+  }
+  const RANDOM_ATTEMPTS = 20;
+  const tieBreaks = ["size-desc", "size-asc"];
+  for (let i = 0; i < RANDOM_ATTEMPTS; i++) tieBreaks.push("random");
+
+  let best = null;
+  let bestScore = -Infinity;
+  for (const tb of tieBreaks) {
+    const attempt = topoScheduleCore(courses, maxCreditsPerSem, maxSemesters, includeSummer, maxCreditsSummer, minCreditsPerSem, denom, false, tb);
+    const fits = attempt.unscheduledCount === 0;
+    const variance = scheduleVariance(attempt.semesters);
+    const score = fits ? 1000000 - variance : -1000 * attempt.unscheduledCount - variance;
+    if (score > bestScore) {
+      bestScore = score;
+      best = attempt;
+    }
+    if (fits && variance < 0.5) break;
+  }
+  const { unscheduledCount, ...result } = best;
+  return result;
+}
+
+// ---------- Real constraint solver ----------
+// A greedy forward pass — even with many randomized retries — can miss valid schedules that
+// require deliberately *holding back* a ready course so a better overall arrangement works out.
+// This is a genuine constraint-satisfaction problem (assign each course to a term, subject to
+// ordering and credit-cap constraints), so we solve it with backtracking: try a term for each
+// course in dependency order, and if a later course gets stuck, backtrack and try a different
+// term for an earlier one. This explores the full space of valid arrangements, so if a working
+// schedule exists within the constraints, it will be found — not just "probably found."
+
+function buildTermUniverse(includeSummer, maxSemesters) {
+  const horizon = maxSemesters ? Number(maxSemesters) : 16; // generous horizon when unbounded
+  const years = Math.max(1, Math.ceil(horizon / 2));
+  const seq = [];
+  let rank = 0;
+  for (let y = 1; y <= years; y++) {
+    if (rank < horizon) {
+      seq.push({ type: "fall", year: y, rank: rank + 1 });
+      rank++;
+    }
+    if (rank < horizon) {
+      seq.push({ type: "spring", year: y, rank: rank + 1 });
+      rank++;
+    }
+    if (includeSummer) seq.push({ type: "summer", year: y });
+  }
+  return seq;
+}
+
+// Merge legacy strict co-requisites (exact-same-term) into single atomic nodes via union-find.
+// Prerequisite (strict earlier) and Corequisite (earlier-or-same) stay as separate directed
+// constraints between nodes — they no longer need forced bundling, since the solver can simply
+// try terms until it finds one that satisfies "no later than."
+function buildNodes(courses) {
+  const byId = Object.fromEntries(courses.map((c) => [c.id, c]));
+  const wanted = courses.filter((c) => c.want);
+  const wantedIds = new Set(wanted.map((c) => c.id));
+
+  const parent = {};
+  wanted.forEach((c) => (parent[c.id] = c.id));
+  const find = (x) => {
+    while (parent[x] !== x) {
+      parent[x] = parent[parent[x]];
+      x = parent[x];
+    }
+    return x;
+  };
+  const union = (a, b) => {
+    const ra = find(a), rb = find(b);
+    if (ra !== rb) parent[ra] = rb;
+  };
+  wanted.forEach((c) => {
+    (c.coreqs || []).forEach((p) => {
+      if (wantedIds.has(p)) union(c.id, p);
+    });
+  });
+
+  const groups = {};
+  wanted.forEach((c) => {
+    const r = find(c.id);
+    (groups[r] = groups[r] || []).push(c.id);
+  });
+
+  const nodes = {};
+  Object.entries(groups).forEach(([root, memberIds]) => {
+    const members = memberIds.map((id) => byId[id]);
+    const credits = members.reduce((s, m) => s + Number(m.credits || 0), 0);
+    let offered = "both";
+    let conflict = false;
+    members.forEach((m) => {
+      if (m.offered && m.offered !== "both") {
+        if (offered === "both") offered = m.offered;
+        else if (offered !== m.offered) conflict = true;
+      }
+    });
+    const prereqTargets = new Set();
+    const concurTargets = new Set();
+    members.forEach((m) => {
+      (m.prereqs || []).forEach((p) => {
+        if (byId[p] && wantedIds.has(p)) {
+          const pr = find(p);
+          if (pr !== root) prereqTargets.add(pr);
+        }
+      });
+      (m.concurs || []).forEach((p) => {
+        if (byId[p] && wantedIds.has(p)) {
+          const pr = find(p);
+          if (pr !== root) concurTargets.add(pr);
+        }
+      });
+    });
+    let lockSpec = null;
+    members.forEach((m) => {
+      if (!lockSpec && m.lock && m.lock.mode !== "none") lockSpec = m.lock;
+    });
+    nodes[root] = {
+      id: root,
+      members: memberIds,
+      credits,
+      offered,
+      conflict,
+      prereqTargets,
+      concurTargets,
+      lockSpec,
+      label: members.map((m) => m.code || m.name || "Untitled").join(" + "),
+    };
+  });
+  return { nodes, byId };
+}
+
+function backtrackAssign(nodes, termSeq, maxCreditsPerSem, maxCreditsSummer, lockedIdxByNode, valueOrderFn, deadline) {
+  const allIds = Object.keys(nodes);
+  const assignment = {};
+  const assignedSet = new Set();
+  const usage = new Array(termSeq.length).fill(0);
+  let visits = 0;
+
+  const domainFor = (node) => {
+    const locked = lockedIdxByNode[node.id];
+    if (node.conflict) return [];
+    if (locked !== null && locked !== undefined) return [locked];
+    const out = [];
+    for (let i = 0; i < termSeq.length; i++) {
+      const t = termSeq[i];
+      const termOk = t.type === "summer" ? node.offered === "both" : (node.offered === "both" || node.offered === t.type);
+      if (termOk) out.push(i);
+    }
+    return out;
+  };
+
+  const satisfies = (node, ti) => {
+    for (const target of node.prereqTargets) {
+      const ta = assignment[target];
+      if (ta === undefined || !(ta < ti)) return false;
+    }
+    for (const target of node.concurTargets) {
+      const ta = assignment[target];
+      if (ta === undefined || !(ta <= ti)) return false;
+    }
+    return true;
+  };
+
+  // A node is "ready" once everything it directly depends on already has a term assigned.
+  const readyNodes = () =>
+    allIds.filter(
+      (id) =>
+        !assignedSet.has(id) &&
+        [...nodes[id].prereqTargets, ...nodes[id].concurTargets].every((t) => assignedSet.has(t) || !nodes[t])
+    );
+
+  function dfs() {
+    visits++;
+    if (visits % 3000 === 0 && Date.now() > deadline) return null;
+    if (assignedSet.size === allIds.length) return true;
+
+    const ready = readyNodes();
+    if (ready.length === 0) return false; // shouldn't happen given a valid DAG, but guard against it
+
+    // Most-constrained-first (MRV): assign whichever ready course currently has the fewest
+    // valid terms next. This is what actually prevents combinatorial blowup — flexible,
+    // prereq-free electives have huge domains and naturally get pushed to the end, instead of
+    // the search wasting effort enumerating their interchangeable orderings before it ever
+    // reaches the genuinely tight part of the schedule (e.g., a deep capstone chain).
+    let bestId = null, bestDomain = null, bestSize = Infinity;
+    for (const id of ready) {
+      const d = domainFor(nodes[id]).filter((ti) => satisfies(nodes[id], ti));
+      if (d.length < bestSize) {
+        bestSize = d.length;
+        bestId = id;
+        bestDomain = d;
+        if (bestSize === 0) break; // dead end found immediately — no point checking further
+      }
+    }
+    const node = nodes[bestId];
+    const candidates = valueOrderFn(bestDomain, node, usage, termSeq);
+    for (const ti of candidates) {
+      const cap = termSeq[ti].type === "summer" ? maxCreditsSummer : maxCreditsPerSem;
+      if (cap && usage[ti] + node.credits > cap) continue;
+      assignment[node.id] = ti;
+      usage[ti] += node.credits;
+      assignedSet.add(node.id);
+      const res = dfs();
+      if (res === true) return true;
+      if (res === null) return null;
+      delete assignment[node.id];
+      usage[ti] -= node.credits;
+      assignedSet.delete(node.id);
+    }
+    return false;
+  }
+
+  const outcome = dfs();
+  return { success: outcome === true, timedOut: outcome === null, assignment, usage };
+}
+
+function assignmentToSemesters(assignment, nodes, termSeq, byId) {
+  const perTerm = termSeq.map((t) => ({ term: t, courses: [], credits: 0 }));
+  Object.entries(assignment).forEach(([nodeId, ti]) => {
+    const node = nodes[nodeId];
+    node.members.forEach((mid) => perTerm[ti].courses.push(byId[mid]));
+    perTerm[ti].credits += node.credits;
+  });
+  while (perTerm.length && perTerm[perTerm.length - 1].courses.length === 0) perTerm.pop();
+  return perTerm;
+}
+
+// ---------- Post-processing balance pass ----------
+// Backtracking finds *a* valid schedule, but the first one found isn't necessarily well
+// balanced. This pass repeatedly looks for a course sitting in an over-loaded semester that
+// can be legally moved into an under-loaded one (without breaking any prerequisite, requisite,
+// lock, term-offering, or hard credit-cap constraint) and moves it. It stops when no further
+// improving move exists.
+function buildSuccessors(nodes) {
+  const succ = {};
+  Object.keys(nodes).forEach((id) => (succ[id] = []));
+  Object.entries(nodes).forEach(([id, n]) => {
+    n.prereqTargets.forEach((t) => {
+      if (succ[t]) succ[t].push({ id, kind: "prereq" });
+    });
+    n.concurTargets.forEach((t) => {
+      if (succ[t]) succ[t].push({ id, kind: "concur" });
+    });
+  });
+  return succ;
+}
+
+function canPlaceNode(nodeId, newTerm, nodes, assignment, succ, lockedIdxByNode) {
+  const locked = lockedIdxByNode[nodeId];
+  if (locked !== null && locked !== undefined) return false; // never move a locked course
+  const node = nodes[nodeId];
+  for (const t of node.prereqTargets) {
+    if (!(assignment[t] < newTerm)) return false;
+  }
+  for (const t of node.concurTargets) {
+    if (!(assignment[t] <= newTerm)) return false;
+  }
+  for (const s of succ[nodeId]) {
+    const sTerm = assignment[s.id];
+    if (sTerm === undefined) continue;
+    if (s.kind === "prereq" && !(newTerm < sTerm)) return false;
+    if (s.kind === "concur" && !(newTerm <= sTerm)) return false;
+  }
+  return true;
+}
+
+function localBalance(assignment, usage, nodes, termSeq, maxCreditsPerSem, maxCreditsSummer, minCreditsPerSem, lockedIdxByNode) {
+  const succ = buildSuccessors(nodes);
+  const fsIndices = termSeq.map((t, i) => i).filter((i) => termSeq[i].type !== "summer");
+  const allIds = Object.keys(nodes);
+  const min = Number(minCreditsPerSem) || 0;
+
+  const variance = () => {
+    const loads = fsIndices.filter((i) => usage[i] > 0).map((i) => usage[i]);
+    if (!loads.length) return 0;
+    const mean = loads.reduce((a, b) => a + b, 0) / loads.length;
+    return loads.reduce((s, c) => s + (c - mean) * (c - mean), 0) / loads.length;
+  };
+  const underMinCount = () => fsIndices.filter((i) => usage[i] > 0 && min && usage[i] < min).length;
+
+  let iterations = 0;
+  while (iterations < 400) {
+    iterations++;
+    const curUnder = underMinCount();
+    const curVar = variance();
+    if (curUnder === 0 && curVar < 0.5) break; // already well-balanced, nothing meaningful left to gain
+
+    // Best-improvement search: evaluate every legal single-course move this round (not just the
+    // first one found) and take whichever most reduces the count of under-minimum semesters,
+    // tie-broken by variance. This is what actually finds moves like relocating a "free agent"
+    // course (nothing depends on it) into a light semester — a first-found move elsewhere can
+    // otherwise eat the only good opportunity before considering it.
+    let bestMove = null;
+    let bestUnder = curUnder;
+    let bestVar = curVar;
+
+    for (const id of allIds) {
+      const from = assignment[id];
+      if (from === undefined || termSeq[from].type === "summer") continue;
+      const node = nodes[id];
+      for (const to of fsIndices) {
+        if (to === from) continue;
+        if (maxCreditsPerSem && usage[to] + node.credits > maxCreditsPerSem) continue;
+        const termOk = node.offered === "both" || node.offered === termSeq[to].type;
+        if (!termOk) continue;
+        if (!canPlaceNode(id, to, nodes, assignment, succ, lockedIdxByNode)) continue;
+
+        usage[from] -= node.credits;
+        usage[to] += node.credits;
+        const newUnder = underMinCount();
+        const newVar = variance();
+        usage[from] += node.credits;
+        usage[to] -= node.credits;
+
+        if (newUnder < bestUnder || (newUnder === bestUnder && newVar < bestVar - 1e-9)) {
+          bestUnder = newUnder;
+          bestVar = newVar;
+          bestMove = { id, from, to, credits: node.credits };
+        }
+      }
+    }
+
+    if (!bestMove) break; // no single move improves things further — local optimum reached
+    assignment[bestMove.id] = bestMove.to;
+    usage[bestMove.from] -= bestMove.credits;
+    usage[bestMove.to] += bestMove.credits;
+  }
+
+  return { assignment, usage };
+}
+
+function topoSchedule(courses, maxCreditsPerSem, maxSemesters, includeSummer, maxCreditsSummer, minCreditsPerSem) {
+  const cycleError = detectCycle(courses);
+  if (cycleError) {
+    return { semesters: [], warnings: [cycleError] };
+  }
+
+  const termSeq = buildTermUniverse(includeSummer, Number(maxSemesters) || 0);
+  const { nodes, byId } = buildNodes(courses);
+  const nodeIds = Object.keys(nodes);
+  const warnings = [];
+
+  let finalTermIdx = null;
+  if (maxSemesters) {
+    const idx = termSeq.findIndex((t) => t.rank === Number(maxSemesters));
+    if (idx > -1) finalTermIdx = idx;
+  }
+
+  const lockedIdxByNode = {};
+  nodeIds.forEach((id) => {
+    const n = nodes[id];
+    lockedIdxByNode[id] = null;
+    if (!n.lockSpec) return;
+    if (n.lockSpec.mode === "specific") {
+      const tKey = `${n.lockSpec.type}-${Number(n.lockSpec.year)}`;
+      const idx = termSeq.findIndex((t) => termKey(t) === tKey);
+      if (idx === -1) {
+        warnings.push(`"${n.label}" is locked outside the planning window — check your constraints.`);
+      } else {
+        lockedIdxByNode[id] = idx;
+      }
+    } else if (n.lockSpec.mode === "final") {
+      if (finalTermIdx === null) {
+        warnings.push(`"${n.label}" is locked to your final semester, but set "Max semesters available" first.`);
+      } else {
+        lockedIdxByNode[id] = finalTermIdx;
+      }
+    }
+  });
+
+  nodeIds.forEach((id) => {
+    if (nodes[id].conflict) {
+      warnings.push(`"${nodes[id].label}" has conflicting term offerings between its co-requisite courses — they can't be scheduled together in any term.`);
+    }
+  });
+
+  // Quick global sanity check: if total credit demand exceeds total available capacity across
+  // every term outright, no search can ever succeed — skip straight to the fallback instead of
+  // burning time discovering that the hard way through search.
+  const totalCapacity = termSeq.reduce((s, t) => {
+    const cap = t.type === "summer" ? Number(maxCreditsSummer) || 0 : Number(maxCreditsPerSem) || 0;
+    return s + (cap || Infinity);
+  }, 0);
+  const totalDemand = nodeIds.reduce((s, id) => s + nodes[id].credits, 0);
+  const globallyImpossible = isFinite(totalCapacity) && totalDemand > totalCapacity;
+
+  const strategies = [
+    (cands, node, usage) => [...cands].sort((a, b) => usage[a] - usage[b] || a - b),
+    (cands) => [...cands].sort((a, b) => a - b),
+    (cands) => {
+      const arr = [...cands];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    },
+  ];
+
+  let bestComplete = null;
+  let bestVariance = Infinity;
+  let provenInfeasible = globallyImpossible;
+  let anyTimedOut = false;
+
+  if (!globallyImpossible) {
+    const perStrategyMs = 2500;
+    for (const strat of strategies) {
+      const deadline = Date.now() + perStrategyMs;
+      const r = backtrackAssign(nodes, termSeq, Number(maxCreditsPerSem) || 0, Number(maxCreditsSummer) || 0, lockedIdxByNode, strat, deadline);
+      if (r.timedOut) {
+        anyTimedOut = true;
+        continue;
+      }
+      if (r.success) {
+        const balanced = localBalance(
+          { ...r.assignment },
+          [...r.usage],
+          nodes,
+          termSeq,
+          Number(maxCreditsPerSem) || 0,
+          Number(maxCreditsSummer) || 0,
+          Number(minCreditsPerSem) || 0,
+          lockedIdxByNode
+        );
+        const semesters = assignmentToSemesters(balanced.assignment, nodes, termSeq, byId);
+        const variance = scheduleVariance(semesters);
+        if (variance < bestVariance) {
+          bestVariance = variance;
+          bestComplete = semesters;
+        }
+        // Already well-balanced — stop spending more time chasing marginal improvements.
+        if (variance < 0.5) break;
+      } else {
+        // A full backtracking search exhausted every option and still failed — this is a
+        // genuine proof that no valid schedule exists within the given constraints, not just
+        // a heuristic miss, and holds regardless of value ordering. No need to try others.
+        provenInfeasible = true;
+        break;
+      }
+    }
+  }
+
+  if (bestComplete) {
+    const finalWarnings = [...warnings];
+    bestComplete.forEach((sem) => {
+      if (sem.term.type !== "summer" && minCreditsPerSem && sem.courses.length > 0 && sem.credits < Number(minCreditsPerSem)) {
+        finalWarnings.push(`${semesterLabel(sem.term)} is under your minimum (${sem.credits} of ${minCreditsPerSem} credits) — not enough courses had their prerequisites cleared yet to fill it further.`);
+      }
+    });
+    return { semesters: bestComplete, warnings: finalWarnings };
+  }
+
+  // No strategy produced a complete schedule. Fall back to the best-effort greedy search so
+  // the user still sees a concrete, helpful partial plan — but tell them plainly whether this
+  // is a proven hard limit or just a search that ran out of time (the latter should be rare
+  // at realistic course-list sizes).
+  const fallback = legacyForwardSearch(courses, maxCreditsPerSem, maxSemesters, includeSummer, maxCreditsSummer, minCreditsPerSem);
+  const intro = provenInfeasible
+    ? `No complete schedule fits within your current constraints (checked exhaustively, not just a quick search) — here's the closest possible arrangement. Try raising "Max semesters available" or your credit limit.`
+    : anyTimedOut
+    ? `This course list is large enough that an exhaustive check didn't finish in time — showing the best schedule found so far.`
+    : `Couldn't find a complete schedule — here's the closest arrangement found.`;
+  return { semesters: fallback.semesters, warnings: [...warnings, intro, ...fallback.warnings] };
+}
+
+function generateAllSchedules(list, maxCredits, maxSemesters, includeSummer, maxCreditsSummer, minCredits) {
+  const { semesters, warnings } = topoSchedule(list, maxCredits, maxSemesters, includeSummer, maxCreditsSummer, minCredits);
+  return [{ label: "Balanced", semesters, warnings }];
+}
+
+class PlannerErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    // Surfaced in the UI below; also logged for anyone checking the browser console.
+    console.error("Course planner crashed:", error, info);
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ background: "#FAF8F4", minHeight: "100%", padding: 32, fontFamily: "-apple-system, sans-serif" }}>
+          <div style={{ maxWidth: 640, margin: "0 auto", background: "#FBEFE8", border: "1px solid #E3AE8E", borderRadius: 8, padding: 24 }}>
+            <h2 style={{ margin: "0 0 8px", fontSize: 18, color: "#7A3315" }}>Something broke while building the schedule</h2>
+            <p style={{ fontSize: 13, color: "#5B5A57", marginBottom: 12 }}>
+              This is likely caused by a specific combination of course relationships (Prereq/Coreq/Requisite) rather than the whole tool being broken.
+              Here's the technical error — copy it along with the courses you just edited so it can be debugged:
+            </p>
+            <pre style={{ background: "#fff", border: "1px solid #DCD8CF", borderRadius: 4, padding: 10, fontSize: 11, overflow: "auto", whiteSpace: "pre-wrap" }}>
+              {String(this.state.error && this.state.error.message)}
+            </pre>
+            <button
+              onClick={() => this.setState({ error: null })}
+              style={{ marginTop: 12, padding: "8px 14px", background: "#1C1B1A", color: "#fff", border: "none", borderRadius: 4, cursor: "pointer", fontSize: 13 }}
+            >
+              Try to recover
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+function CoursePlanner() {
+  return (
+    <PlannerErrorBoundary>
+      <CoursePlannerInner />
+    </PlannerErrorBoundary>
+  );
+}
+
+function CoursePlannerInner() {
+  const [list, setList] = useState([]);
+
+  const [maxCredits, setMaxCredits] = useState(15);
+  const [minCredits, setMinCredits] = useState(12);
+  const [maxSemesters, setMaxSemesters] = useState(8);
+  const [includeSummer, setIncludeSummer] = useState(false);
+  const [maxCreditsSummer, setMaxCreditsSummer] = useState(6);
+  const [showSettings, setShowSettings] = useState(true);
+  const [scheduleIndex, setScheduleIndex] = useState(0);
+  const [schedules, setSchedules] = useState(null); // null = never generated yet
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [generatedSignature, setGeneratedSignature] = useState(null);
+
+  const updateCourse = (id, patch) => setList((l) => l.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  const removeCourse = (id) =>
+    setList((l) =>
+      l
+        .filter((c) => c.id !== id)
+        .map((c) => ({
+          ...c,
+          prereqs: c.prereqs.filter((p) => p !== id),
+          coreqs: (c.coreqs || []).filter((p) => p !== id),
+          concurs: (c.concurs || []).filter((p) => p !== id),
+        }))
+    );
+  const addCourse = () => setList((l) => [...l, emptyCourse()]);
+
+  // The solver can take real time on larger course lists (it's doing actual constraint search,
+  // not a quick pass), so it only runs when the user explicitly asks for it — never on every
+  // keystroke. This keeps typing and editing instant regardless of how many courses are loaded.
+  const currentSignature = JSON.stringify({ list, maxCredits, minCredits, maxSemesters, includeSummer, maxCreditsSummer });
+  const isStale = schedules !== null && generatedSignature !== currentSignature;
+
+  const handleGenerate = () => {
+    setIsGenerating(true);
+    // Deferred so the "Generating…" state actually paints before the (synchronous, potentially
+    // multi-second) solver call blocks the main thread.
+    setTimeout(() => {
+      const result = generateAllSchedules(list, Number(maxCredits) || 0, Number(maxSemesters) || 0, includeSummer, Number(maxCreditsSummer) || 0, Number(minCredits) || 0);
+      setSchedules(result);
+      setGeneratedSignature(currentSignature);
+      setScheduleIndex(0);
+      setIsGenerating(false);
+    }, 30);
+  };
+
+  const clampedIndex = schedules ? Math.min(scheduleIndex, schedules.length - 1) : 0;
+  const active = schedules ? schedules[clampedIndex] || { semesters: [], warnings: [] } : null;
+  const hasOutOfRangeSemester = !!(
+    active &&
+    active.semesters.some((sem) => {
+      if (sem.term.type === "summer" || sem.courses.length === 0) return false;
+      const under = Number(minCredits) && sem.credits < Number(minCredits);
+      const over = Number(maxCredits) && sem.credits > Number(maxCredits);
+      return under || over;
+    })
+  );
+
+  const totalWantedCredits = list.filter((c) => c.want).reduce((s, c) => s + Number(c.credits || 0), 0);
+
+  const relTag = (rel) => (rel === "prereqs" ? { label: "Prerequisite", short: "Prereq", color: "#3A5BA0" } : { label: "Corequisite", short: "Coreq", color: "#2F6F4E" });
+
+  const cycleRelation = (course, otherId) => {
+    const in_ = (key) => (course[key] || []).includes(otherId);
+    const strip = (c) => ({
+      ...c,
+      prereqs: (c.prereqs || []).filter((p) => p !== otherId),
+      coreqs: (c.coreqs || []).filter((p) => p !== otherId),
+      concurs: (c.concurs || []).filter((p) => p !== otherId),
+    });
+    // Two relation types only, matching standard registrar definitions:
+    // Prerequisite (strictly earlier) -> Corequisite (earlier or same term) -> none.
+    let next;
+    if (in_("prereqs")) next = { ...strip(course), concurs: [...(course.concurs || []), otherId] };
+    else if (in_("concurs") || in_("coreqs")) next = strip(course);
+    else next = { ...strip(course), prereqs: [...(course.prereqs || []), otherId] };
+    updateCourse(course.id, next);
+  };
+
+  return (
+    <div style={{ background: "#FAF8F4", color: "#1C1B1A", minHeight: "100%", fontFamily: "Iowan Old Style, Georgia, ui-serif, serif", padding: "32px 20px 60px" }}>
+      <style>{`
+        .pl-sans { font-family: -apple-system, "Segoe UI", Inter, ui-sans-serif, sans-serif; }
+        .pl-input { font-family: inherit; background: #fff; border: 1px solid #DCD8CF; border-radius: 4px; padding: 6px 8px; font-size: 13px; color: #1C1B1A; }
+        .pl-input:focus { outline: 2px solid #3A5BA0; outline-offset: 1px; }
+        .pl-btn { font-family: inherit; cursor: pointer; border-radius: 4px; border: 1px solid transparent; font-size: 13px; display: inline-flex; align-items: center; gap: 6px; }
+        .pl-btn:focus-visible { outline: 2px solid #3A5BA0; outline-offset: 2px; }
+        .pl-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .pl-chip { display: inline-flex; align-items: center; gap: 4px; background: #EFEBE2; border: 1px solid #DCD8CF; border-radius: 999px; padding: 2px 8px; font-size: 12px; }
+        .pl-card { background: #fff; border: 1px solid #DCD8CF; border-radius: 6px; }
+        ::selection { background: #3A5BA033; }
+      `}</style>
+
+      <div style={{ maxWidth: 1120, margin: "0 auto" }}>
+        <header style={{ borderBottom: "2px solid #1C1B1A", paddingBottom: 16, marginBottom: 28, display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <h1 style={{ fontSize: 30, margin: 0, fontWeight: 600, letterSpacing: "-0.01em" }}>Course Sequence Builder</h1>
+          </div>
+          <button className="pl-btn pl-sans" onClick={() => setShowSettings((s) => !s)} style={{ padding: "8px 14px", background: showSettings ? "#1C1B1A" : "#fff", color: showSettings ? "#fff" : "#1C1B1A", border: "1px solid #1C1B1A" }}>
+            <GearIcon size={14} /> Constraints
+          </button>
+        </header>
+
+        {showSettings && (
+          <div className="pl-card pl-sans" style={{ padding: 16, marginBottom: 24, display: "flex", gap: 24, flexWrap: "wrap" }}>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "#5B5A57" }}>
+              Max credits / semester
+              <input type="number" className="pl-input" value={maxCredits} onChange={(e) => setMaxCredits(e.target.value)} onFocus={(e) => e.target.select()} style={{ width: 90 }} min={1} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "#5B5A57" }}>
+              Min credits / semester
+              <input type="number" className="pl-input" value={minCredits} onChange={(e) => setMinCredits(e.target.value)} onFocus={(e) => e.target.select()} style={{ width: 90 }} min={0} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "#5B5A57" }}>
+              Max semesters available
+              <input type="number" className="pl-input" value={maxSemesters} onChange={(e) => setMaxSemesters(e.target.value)} style={{ width: 90 }} min={1} />
+            </label>
+            <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "#5B5A57" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <input type="checkbox" checked={includeSummer} onChange={(e) => setIncludeSummer(e.target.checked)} />
+                Include summer term
+              </span>
+            </label>
+            {includeSummer && (
+              <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "#5B5A57" }}>
+                Max credits / summer
+                <input type="number" className="pl-input" value={maxCreditsSummer} onChange={(e) => setMaxCreditsSummer(e.target.value)} style={{ width: 90 }} min={0} />
+              </label>
+            )}
+            <div style={{ fontSize: 12, color: "#5B5A57", alignSelf: "center" }}>
+              Total credits still needed: <strong style={{ color: "#1C1B1A" }}>{totalWantedCredits}</strong>
+            </div>
+          </div>
+        )}
+
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr)", gap: 28 }}>
+          <section>
+            <div className="pl-sans" style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5B5A57" }}>
+              <BookIcon size={14} /> Courses
+            </div>
+
+            <div className="pl-card" style={{ overflow: "hidden" }}>
+              <div className="pl-sans" style={{ display: "grid", gridTemplateColumns: "85px 1fr 60px 1.4fr 130px 150px 70px 30px", gap: 8, padding: "8px 12px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.06em", color: "#5B5A57", borderBottom: "1px solid #DCD8CF", background: "#F4F1EA" }}>
+                <span>Code</span><span>Title</span><span>Credits</span><span>Relations</span><span>Offered</span><span>Lock to term</span><span>Plan</span><span></span>
+              </div>
+
+              {list.map((c) => (
+                <div key={c.id} style={{ display: "grid", gridTemplateColumns: "85px 1fr 60px 1.4fr 130px 150px 70px 30px", gap: 8, padding: "8px 12px", borderBottom: "1px solid #EFEBE2", alignItems: "center" }}>
+                  <input className="pl-input pl-sans" value={c.code} placeholder="CS201" onChange={(e) => updateCourse(c.id, { code: e.target.value })} />
+                  <input className="pl-input pl-sans" value={c.name} placeholder="Title (optional)" onChange={(e) => updateCourse(c.id, { name: e.target.value })} />
+                  <input
+                    type="number"
+                    className="pl-input pl-sans"
+                    value={c.credits}
+                    min={0}
+                    step="0.5"
+                    onFocus={(e) => e.target.select()}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      updateCourse(c.id, { credits: v === "" ? "" : parseFloat(v) });
+                    }}
+                    onBlur={(e) => {
+                      if (e.target.value === "" || isNaN(parseFloat(e.target.value))) updateCourse(c.id, { credits: 0 });
+                    }}
+                  />
+
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {list.filter((o) => o.id !== c.id).map((o) => {
+                      const rel = (c.prereqs || []).includes(o.id) ? "prereqs" : ((c.coreqs || []).includes(o.id) || (c.concurs || []).includes(o.id)) ? "concurs" : null;
+                      const tag = rel ? relTag(rel) : null;
+                      return (
+                        <button
+                          key={o.id}
+                          className="pl-sans"
+                          onClick={() => cycleRelation(c, o.id)}
+                          title={rel ? `${tag.label} — click to change` : `Click to mark a relation to ${o.code || o.name}`}
+                          style={{
+                            fontSize: 11,
+                            padding: "2px 7px",
+                            borderRadius: 999,
+                            border: "1px solid " + (tag ? tag.color : "#DCD8CF"),
+                            background: tag ? tag.color : "#fff",
+                            color: tag ? "#fff" : "#5B5A57",
+                            cursor: "pointer",
+                          }}
+                        >
+                          {o.code || "—"}{tag ? ` · ${tag.label[0]}` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="pl-sans" style={{ display: "flex", gap: 4 }}>
+                    {["both", "fall", "spring"].map((opt) => {
+                      const activeOpt = c.offered === opt;
+                      const label = opt === "both" ? "Either" : opt === "fall" ? "Fall" : "Spring";
+                      return (
+                        <button key={opt} onClick={() => updateCourse(c.id, { offered: opt })}
+                          style={{ fontSize: 11, padding: "2px 7px", borderRadius: 4, border: "1px solid " + (activeOpt ? "#1C1B1A" : "#DCD8CF"), background: activeOpt ? "#1C1B1A" : "#fff", color: activeOpt ? "#fff" : "#5B5A57", cursor: "pointer" }}>
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="pl-sans" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <select
+                      className="pl-input"
+                      style={{ fontSize: 11, padding: "4px 6px" }}
+                      value={c.lock?.mode || "none"}
+                      onChange={(e) => updateCourse(c.id, { lock: { ...(c.lock || {}), mode: e.target.value, type: c.lock?.type || "fall", year: c.lock?.year || 1 } })}
+                    >
+                      <option value="none">No lock</option>
+                      <option value="specific">Specific term</option>
+                      <option value="final">Final semester</option>
+                    </select>
+                    {c.lock?.mode === "specific" && (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <select
+                          className="pl-input"
+                          style={{ fontSize: 11, padding: "4px 6px", width: 70 }}
+                          value={c.lock.type}
+                          onChange={(e) => updateCourse(c.id, { lock: { ...c.lock, type: e.target.value } })}
+                        >
+                          <option value="fall">Fall</option>
+                          <option value="spring">Spring</option>
+                          {includeSummer && <option value="summer">Summer</option>}
+                        </select>
+                        <input
+                          type="number"
+                          className="pl-input"
+                          style={{ fontSize: 11, padding: "4px 6px", width: 50 }}
+                          value={c.lock.year}
+                          min={1}
+                          onChange={(e) => updateCourse(c.id, { lock: { ...c.lock, year: Number(e.target.value) } })}
+                          title="Year"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <label className="pl-sans" style={{ display: "flex", justifyContent: "center" }}>
+                    <input type="checkbox" checked={c.want} onChange={(e) => updateCourse(c.id, { want: e.target.checked })} title="Checked = still need to take. Unchecked = already completed." />
+                  </label>
+                  <button onClick={() => removeCourse(c.id)} style={{ background: "none", border: "none", cursor: "pointer", color: "#B5481F", display: "flex", justifyContent: "center" }} aria-label="Remove course">
+                    <TrashIcon size={15} />
+                  </button>
+                </div>
+              ))}
+
+              <button onClick={addCourse} className="pl-btn pl-sans" style={{ margin: 12, padding: "8px 14px", background: "#1C1B1A", color: "#fff" }}>
+                <PlusIcon size={14} /> Add course
+              </button>
+            </div>
+
+            <p className="pl-sans" style={{ fontSize: 12, color: "#5B5A57", marginTop: 8, lineHeight: 1.5 }}>
+              <strong>Relations:</strong> click a chip to cycle it through{" "}
+              <span style={{ color: "#3A5BA0" }}>Prerequisite</span> — must be completed in an earlier term before you can enroll in this course →{" "}
+              <span style={{ color: "#2F6F4E" }}>Corequisite</span> — must be completed earlier, or taken in the same term as this course → none.
+              <br />
+              <strong>Lock to term:</strong> pin a course to an exact semester, or to whatever your final semester turns out to be (needs "Max semesters available" set).
+            </p>
+          </section>
+
+          <section>
+            <div className="pl-sans" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 10 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "#5B5A57" }}>
+                <CalIcon size={14} /> Generated plan
+              </div>
+              {schedules && schedules.length > 1 && (
+                <div className="pl-sans" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <LayersIcon size={13} style={{ color: "#5B5A57" }} />
+                  <span style={{ fontSize: 12, color: "#5B5A57" }}>
+                    Option {clampedIndex + 1} of {schedules.length}
+                  </span>
+                  <button className="pl-btn" onClick={() => setScheduleIndex((i) => Math.max(0, i - 1))} disabled={clampedIndex === 0} style={{ padding: 4, border: "1px solid #DCD8CF" }}>
+                    <ChevronLeftIcon size={14} />
+                  </button>
+                  <button className="pl-btn" onClick={() => setScheduleIndex((i) => Math.min(schedules.length - 1, i + 1))} disabled={clampedIndex === schedules.length - 1} style={{ padding: 4, border: "1px solid #DCD8CF" }}>
+                    <ChevronRightIcon size={14} />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleGenerate}
+              disabled={isGenerating || list.filter((c) => c.want).length === 0}
+              className="pl-sans"
+              style={{
+                width: "100%",
+                padding: "12px 16px",
+                marginBottom: 16,
+                borderRadius: 6,
+                border: "1px solid #1C1B1A",
+                background: isGenerating ? "#5B5A57" : "#1C1B1A",
+                color: "#fff",
+                fontSize: 14,
+                fontWeight: 600,
+                cursor: isGenerating ? "default" : "pointer",
+                opacity: list.filter((c) => c.want).length === 0 ? 0.5 : 1,
+              }}
+            >
+              {isGenerating ? "Generating… (this can take a few seconds for larger course lists)" : schedules ? "Regenerate Schedule" : "Generate Schedule"}
+            </button>
+
+            {isStale && !isGenerating && (
+              <div className="pl-sans" style={{ fontSize: 12, color: "#7A3315", background: "#FBEFE8", border: "1px solid #E3AE8E", borderRadius: 6, padding: "8px 12px", marginBottom: 16 }}>
+                Courses or constraints changed since this plan was generated — click "Regenerate Schedule" to update it.
+              </div>
+            )}
+
+            {!schedules && !isGenerating && (
+              <div className="pl-sans pl-card" style={{ padding: 20, color: "#5B5A57", fontSize: 13 }}>
+                Add your courses and set your constraints, then click "Generate Schedule" above. The solver does a real constraint search, so it only runs when you ask it to — not on every edit.
+              </div>
+            )}
+
+            {schedules && (
+              <>
+                {schedules.length > 1 && (
+                  <div className="pl-sans" style={{ fontSize: 12, color: "#5B5A57", marginBottom: 12 }}>
+                    Showing: <strong style={{ color: "#1C1B1A" }}>{active.label}</strong> — these are different valid orderings; use the arrows to compare and pick the one that fits your real-world preferences.
+                  </div>
+                )}
+
+                {active.warnings.length > 0 && (
+                  <div className="pl-sans" style={{ background: "#FBEFE8", border: "1px solid #E3AE8E", borderRadius: 6, padding: 12, marginBottom: 16, fontSize: 13, color: "#7A3315" }}>
+                    {active.warnings.map((w, i) => (
+                      <div key={i} style={{ display: "flex", gap: 8, marginBottom: i < active.warnings.length - 1 ? 6 : 0 }}>
+                        <WarnIcon size={15} style={{ flexShrink: 0, marginTop: 1 }} />
+                        <span>{w}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {hasOutOfRangeSemester && (
+                  <div className="pl-sans" style={{ background: "#EFF3F9", border: "1px solid #C3D2E8", borderRadius: 6, padding: 12, marginBottom: 16, fontSize: 13, color: "#2A4A7A" }}>
+                    One or more semesters below fall outside your min/max credit range — given your course load and prerequisites, that may simply be unavoidable as set. If you'd like a more balanced result, try loosening "Max credits / semester" or "Min credits / semester" in Constraints, then regenerate.
+                  </div>
+                )}
+
+                {active.semesters.length === 0 && active.warnings.length === 0 && (
+                  <div className="pl-sans pl-card" style={{ padding: 20, color: "#5B5A57", fontSize: 13 }}>
+                    Nothing to schedule yet — check "Plan" on the courses you still need.
+                  </div>
+                )}
+
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 14 }}>
+                  {active.semesters.map((sem, i) => {
+                    const cap = sem.term.type === "summer" ? Number(maxCreditsSummer) : Number(maxCredits);
+                    return (
+                      <div key={i} className="pl-card" style={{ padding: 14, opacity: sem.courses.length === 0 ? 0.5 : 1 }}>
+                        <div className="pl-sans" style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                          <span style={{ fontWeight: 600, fontSize: 13 }}>{semesterLabel(sem.term)}</span>
+                          <span style={{ fontSize: 11, color: sem.credits > cap ? "#B5481F" : "#5B5A57" }}>{sem.credits} cr</span>
+                        </div>
+                        {sem.courses.length === 0 ? (
+                          <div className="pl-sans" style={{ fontSize: 12, color: "#5B5A57" }}>No courses offered this term</div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {sem.courses.map((c) => (
+                              <div key={c.id} style={{ borderLeft: "3px solid #2F6F4E", paddingLeft: 8 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600 }}>{c.code || "Untitled"}</div>
+                                <div className="pl-sans" style={{ fontSize: 12, color: "#5B5A57" }}>{c.name || "—"} · {c.credits} cr</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<CoursePlanner />);
+</script>
+</body>
+</html>
