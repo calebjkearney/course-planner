@@ -682,12 +682,25 @@ function canPlaceNode(nodeId, newTerm, nodes, assignment, succ, lockedIdxByNode)
   return true;
 }
 
-function localBalance(assignment, usage, nodes, termSeq, maxCreditsPerSem, maxCreditsSummer, minCreditsPerSem, lockedIdxByNode) {
+function localBalance(assignment, usage, nodes, termSeq, maxCreditsPerSem, maxCreditsSummer, minCreditsPerSem, lockedIdxByNode, maxSemestersSet) {
   const succ = buildSuccessors(nodes);
   const fsIndices = termSeq.map((t, i) => i).filter((i) => termSeq[i].type !== "summer");
   const allIds = Object.keys(nodes);
   const min = Number(minCreditsPerSem) || 0;
 
+  // The window of semesters we expect to be "in play": every semester the user explicitly
+  // allocated (if they set a semester limit), or just however far the plan currently spans
+  // (if they didn't — no point artificially scattering 3 courses across a generous default
+  // horizon nobody asked for). Gaps inside this window are what we want to eliminate.
+  const windowEnd = () => {
+    if (maxSemestersSet) return fsIndices.length;
+    const used = fsIndices.filter((i) => usage[i] > 0);
+    return used.length ? Math.max(...used) + 1 : 0;
+  };
+  const emptyCount = () => {
+    const w = windowEnd();
+    return fsIndices.filter((i) => i < w && usage[i] === 0).length;
+  };
   const variance = () => {
     const loads = fsIndices.filter((i) => usage[i] > 0).map((i) => usage[i]);
     if (!loads.length) return 0;
@@ -699,16 +712,19 @@ function localBalance(assignment, usage, nodes, termSeq, maxCreditsPerSem, maxCr
   let iterations = 0;
   while (iterations < 400) {
     iterations++;
+    const curEmpty = emptyCount();
     const curUnder = underMinCount();
     const curVar = variance();
-    if (curUnder === 0 && curVar < 0.5) break; // already well-balanced, nothing meaningful left to gain
+    if (curEmpty === 0 && curUnder === 0 && curVar < 0.5) break; // already well-balanced
 
     // Best-improvement search: evaluate every legal single-course move this round (not just the
-    // first one found) and take whichever most reduces the count of under-minimum semesters,
-    // tie-broken by variance. This is what actually finds moves like relocating a "free agent"
-    // course (nothing depends on it) into a light semester — a first-found move elsewhere can
-    // otherwise eat the only good opportunity before considering it.
+    // first one found) and take whichever helps most — first by leaving fewer semesters
+    // completely empty, then by reducing under-minimum semesters, then by overall balance. A
+    // first-found move elsewhere can otherwise eat the only good opportunity before it's
+    // considered, which is what let "free agent" courses (nothing depends on them) sit unused
+    // in an over-loaded semester instead of filling a gap.
     let bestMove = null;
+    let bestEmpty = curEmpty;
     let bestUnder = curUnder;
     let bestVar = curVar;
 
@@ -725,12 +741,18 @@ function localBalance(assignment, usage, nodes, termSeq, maxCreditsPerSem, maxCr
 
         usage[from] -= node.credits;
         usage[to] += node.credits;
+        const newEmpty = emptyCount();
         const newUnder = underMinCount();
         const newVar = variance();
         usage[from] += node.credits;
         usage[to] -= node.credits;
 
-        if (newUnder < bestUnder || (newUnder === bestUnder && newVar < bestVar - 1e-9)) {
+        const better =
+          newEmpty < bestEmpty ||
+          (newEmpty === bestEmpty && newUnder < bestUnder) ||
+          (newEmpty === bestEmpty && newUnder === bestUnder && newVar < bestVar - 1e-9);
+        if (better) {
+          bestEmpty = newEmpty;
           bestUnder = newUnder;
           bestVar = newVar;
           bestMove = { id, from, to, credits: node.credits };
@@ -816,6 +838,7 @@ function topoSchedule(courses, maxCreditsPerSem, maxSemesters, includeSummer, ma
   ];
 
   let bestComplete = null;
+  let bestEmptyCount = Infinity;
   let bestVariance = Infinity;
   let provenInfeasible = globallyImpossible;
   let anyTimedOut = false;
@@ -838,16 +861,19 @@ function topoSchedule(courses, maxCreditsPerSem, maxSemesters, includeSummer, ma
           Number(maxCreditsPerSem) || 0,
           Number(maxCreditsSummer) || 0,
           Number(minCreditsPerSem) || 0,
-          lockedIdxByNode
+          lockedIdxByNode,
+          !!Number(maxSemesters)
         );
         const semesters = assignmentToSemesters(balanced.assignment, nodes, termSeq, byId);
         const variance = scheduleVariance(semesters);
-        if (variance < bestVariance) {
+        const emptyCount = semesters.filter((sem) => sem.term.type !== "summer" && sem.courses.length === 0).length;
+        if (emptyCount < bestEmptyCount || (emptyCount === bestEmptyCount && variance < bestVariance)) {
+          bestEmptyCount = emptyCount;
           bestVariance = variance;
           bestComplete = semesters;
         }
-        // Already well-balanced — stop spending more time chasing marginal improvements.
-        if (variance < 0.5) break;
+        // Already well-balanced with no gaps — stop spending more time chasing marginal gains.
+        if (emptyCount === 0 && variance < 0.5) break;
       } else {
         // A full backtracking search exhausted every option and still failed — this is a
         // genuine proof that no valid schedule exists within the given constraints, not just
@@ -1248,7 +1274,7 @@ function CoursePlannerInner() {
 
             {!schedules && !isGenerating && (
               <div className="pl-sans pl-card" style={{ padding: 20, color: "#5B5A57", fontSize: 13 }}>
-                Add your courses and set your constraints, then click "Generate Schedule" above. The solver does a real constraint search, so it only runs when you ask it to, not on every edit.
+                Add your courses and set your constraints, then click "Generate Schedule" above. The solver does a real constraint search, so it only runs when you ask it to — not on every edit.
               </div>
             )}
 
